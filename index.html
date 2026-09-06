@@ -52,6 +52,37 @@
   /* Login card compact */
   .login-card{padding:22px 18px!important}
 }
+
+/* === MARGENES ADAPTATIVOS PC / ANDROID === */
+html{height:100%;-webkit-text-size-adjust:100%}
+body{min-height:100%;height:100dvh}
+#S_APP{height:100dvh!important}
+#S_APP main{min-width:0}
+#ctn{padding:24px}
+
+@media(min-width:1024px){
+  #ctn{padding:24px 28px 32px}
+  #sb-app-header{padding-left:28px!important;padding-right:28px!important}
+}
+
+@media(max-width:1023px){
+  #ctn{padding:18px}
+  #sb-app-header{padding-left:18px!important;padding-right:18px!important}
+}
+
+@media(max-width:640px){
+  #ctn{padding:10px!important}
+  #sb-app-header{padding-left:10px!important;padding-right:10px!important}
+  #tst-c{top:max(8px,env(safe-area-inset-top));right:max(8px,env(safe-area-inset-right));left:max(8px,env(safe-area-inset-left))}
+  #mdl-bg{padding:max(8px,env(safe-area-inset-top)) 8px max(8px,env(safe-area-inset-bottom)) 8px!important}
+  #mdl-ct{max-height:calc(100dvh - 16px)!important;width:100%!important}
+}
+
+@media(max-width:380px){
+  #ctn{padding:8px!important}
+  #sb-app-header{padding-left:8px!important;padding-right:8px!important}
+}
+
 /* Hide horizontal scrollbar visually but keep functionality */
 .scroll-x{overflow-x:auto;-webkit-overflow-scrolling:touch}</style>
 </head>
