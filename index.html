@@ -197,7 +197,55 @@ function ld(k){try{localStorage.removeItem(k)}catch(e){}}
 var cloudTimer=null;
 function cloudSchedule(){clearTimeout(cloudTimer);cloudTimer=setTimeout(cloudSave,250)}
 async function cloudSave(){if(!CLOUD.enabled||!CLOUD.ready)return;try{var state={data:D,users:getUsers(),biz:getBiz()};CLOUD.state=state;var res=await SB.from('app_state').upsert({id:1,state:state,updated_at:new Date().toISOString()});if(res.error)throw res.error}catch(e){console.warn('No se pudo guardar online:',e)}}
-async function cloudLoad(){if(!CLOUD.enabled){CLOUD.ready=true;return}try{var res=await SB.from('app_state').select('state').eq('id',1).maybeSingle();if(res.error)throw res.error;var st=res.data&&res.data.state?res.data.state:null;if(st){CLOUD.state=st;if(st.data){D=normalizeD(st.data);localStorage.setItem('at6_data',JSON.stringify(D))}if(st.users)localStorage.setItem('at6_users',JSON.stringify(st.users));if(st.biz)localStorage.setItem('at7_biz',JSON.stringify(st.biz))}else{CLOUD.state={data:null,users:null,biz:null};CLOUD.ready=true;await cloudSave();return}CLOUD.ready=true;aplyBiz();render(curSec)}catch(e){console.warn('No se pudo cargar la base online. Se usara la copia local.',e);CLOUD.ready=true;render(curSec)}}
+function mergeCloudData(localData,remoteData){
+  var local=normalizeD(localData||{}),remote=normalizeD(remoteData||{}),out=normalizeD(remote);
+  var arrs=['products','pres','facs','clients','suppliers','purchases','cash','services','remisiones','ots','rentals','audit'];
+  arrs.forEach(function(k){
+    var ra=Array.isArray(remote[k])?remote[k]:[],la=Array.isArray(local[k])?local[k]:[];
+    if(ra.length===0&&la.length>0){out[k]=la.slice();return}
+    var ids={};
+    for(var i=0;i<ra.length;i++){if(ra[i]&&ra[i].id!=null)ids[String(ra[i].id)]=1}
+    out[k]=ra.slice();
+    for(var j=0;j<la.length;j++){var x=la[j],key=x&&x.id!=null?String(x.id):'';
+      if(key&&!ids[key]){out[k].push(x);ids[key]=1}
+      else if(!key&&out[k].indexOf(x)<0){out[k].push(x)}
+    }
+  });
+  ['np','nf','ncomp','nsvc','nrem','nrent','not','ncaja'].forEach(function(k){out[k]=Math.max(Number(local[k])||0,Number(remote[k])||0)});
+  return out;
+}
+async function cloudLoad(){
+  if(!CLOUD.enabled){CLOUD.ready=true;return}
+  try{
+    var localBefore=normalizeD(D);
+    var res=await SB.from('app_state').select('state').eq('id',1).maybeSingle();
+    if(res.error)throw res.error;
+    var st=res.data&&res.data.state?res.data.state:null;
+    if(st){
+      CLOUD.state=st;
+      if(st.data){
+        var remoteData=normalizeD(st.data);
+        D=mergeCloudData(localBefore,remoteData);
+        localStorage.setItem('at6_data',JSON.stringify(D));
+      }
+      if(st.users)localStorage.setItem('at6_users',JSON.stringify(st.users));
+      if(st.biz)localStorage.setItem('at7_biz',JSON.stringify(st.biz));
+      CLOUD.ready=true;
+      if(JSON.stringify(localBefore)!==JSON.stringify(D))cloudSchedule();
+    }else{
+      CLOUD.state={data:null,users:null,biz:null};
+      CLOUD.ready=true;
+      await cloudSave();
+      return;
+    }
+    aplyBiz();
+    render(curSec);
+  }catch(e){
+    console.warn('No se pudo cargar la base online. Se usara la copia local.',e);
+    CLOUD.ready=true;
+    render(curSec);
+  }
+}
 function encPw(s){var r='';for(var i=0;i<s.length;i++){r+=String.fromCharCode(s.charCodeAt(i)+7)}return btoa(r)}
 function chkPw(input,stored){return encPw(input)===stored}
 function getUsers(){try{var d=lg('at6_users');if(d){var p=JSON.parse(d);if(Array.isArray(p)&&p.length>0)return p}}catch(e){}return null}
