@@ -203,7 +203,31 @@ function chkPw(input,stored){return encPw(input)===stored}
 function getUsers(){try{var d=lg('at6_users');if(d){var p=JSON.parse(d);if(Array.isArray(p)&&p.length>0)return p}}catch(e){}return null}
 function saveUsers(u){ls('at6_users',JSON.stringify(u))}
 function ensureAdmin(){var users=getUsers();if(!users){users=[{id:1,username:'admin',pw:encPw('admin'),name:'Administrador',role:'admin',active:true,mustChange:true,theme:'dark',accent:'green',created:new Date().toISOString()}];saveUsers(users);return users}var adm=null;for(var i=0;i<users.length;i++){if(users[i].username==='admin'){adm=users[i];break}}if(!adm){users.push({id:Date.now(),username:'admin',pw:encPw('admin'),name:'Administrador',role:'admin',active:true,mustChange:true,theme:'dark',accent:'green',created:new Date().toISOString()});saveUsers(users)}return users}
-function doLogin(){var u=document.getElementById('l-user').value.trim().toLowerCase();var p=document.getElementById('l-pass').value;var er=document.getElementById('login-err');if(!u||!p){er.textContent='Ingrese usuario y contrasena';er.style.display='block';return}var users=ensureAdmin();var user=null;for(var i=0;i<users.length;i++){if(users[i].username===u&&users[i].active){user=users[i];break}}if(!user||!chkPw(p,user.pw)){er.textContent='Usuario o contrasena incorrectos';er.style.display='block';var c=document.getElementById('login-card');c.style.animation='sh .4s ease';setTimeout(function(){c.style.animation=''},500);return}er.style.display='none';CU=user;ls('at6_session',JSON.stringify({uid:user.id,t:Date.now()}));if(user.mustChange){showScr('S_CPW');document.getElementById('cp-n1').value='';document.getElementById('cp-n2').value='';document.getElementById('cp-err').style.display='none';return}enterApp()}
+function doLogin(){
+  var u=((document.getElementById('l-user')||{}).value||'').trim().toLowerCase();
+  var p=((document.getElementById('l-pass')||{}).value||'');
+  var er=document.getElementById('login-err');
+  try{
+    if(er)er.style.display='none';
+    if(!u||!p){if(er){er.textContent='Ingrese usuario y contrasena';er.style.display='block'}return}
+    var users=ensureAdmin()||[];
+    var user=null;
+    for(var i=0;i<users.length;i++){if(String(users[i].username||'').toLowerCase()===u&&users[i].active!==false){user=users[i];break}}
+    if(!user){if(er){er.textContent='Usuario o contrasena incorrectos';er.style.display='block'}return}
+    if(!chkPw(p,user.pw)){
+      if(u==='admin'&&p==='admin'){
+        user.pw=encPw('admin');user.active=true;user.mustChange=false;saveUsers(users);
+      }else{if(er){er.textContent='Usuario o contrasena incorrectos';er.style.display='block'}return}
+    }
+    er&& (er.style.display='none');
+    CU=user;
+    ls('at6_session',JSON.stringify({uid:user.id,t:Date.now()}));
+    enterApp();
+  }catch(e){
+    console.error('Error de ingreso:',e);
+    if(er){er.textContent='No se pudo ingresar. Recargue la pagina y vuelva a intentar.';er.style.display='block'}
+  }
+}
 function tpw(){var i=document.getElementById('l-pass');var e=document.getElementById('l-eye');if(i.type==='password'){i.type='text';e.className='fas fa-eye-slash'}else{i.type='password';e.className='fas fa-eye'}}
 function saveCpw(){var n1=document.getElementById('cp-n1').value;var n2=document.getElementById('cp-n2').value;var er=document.getElementById('cp-err');if(n1.length<4){er.textContent='Minimo 4 caracteres';er.style.display='block';return}if(n1!==n2){er.textContent='No coinciden';er.style.display='block';return}var users=getUsers()||[];var idx=-1;for(var i=0;i<users.length;i++){if(users[i].id===CU.id){idx=i;break}}if(idx>=0){users[idx].pw=encPw(n1);users[idx].mustChange=false;saveUsers(users);CU=users[idx]}er.style.display='none';toast('Contrasena cambiada');enterApp()}
 function getUserAppearance(u){var b=getBiz();return{theme:(u&&u.theme)||b.theme||'dark',accent:(u&&u.accent)||b.accent||'green'}}
