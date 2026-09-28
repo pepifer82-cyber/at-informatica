@@ -7,6 +7,11 @@ on:
     paths:
       - "ATPrinterAgent_v0.2.0/**"
       - ".github/workflows/build-at-printer-agent.yml"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "ATPrinterAgent_v0.2.0/**"
+      - ".github/workflows/build-at-printer-agent.yml"
 
 jobs:
   build:
