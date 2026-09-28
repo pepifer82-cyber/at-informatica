@@ -1,0 +1,64 @@
+name: Build AT Printer Agent EXE
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["agent-v0.2-build"]
+    paths:
+      - "ATPrinterAgent_v0.2.0/**"
+      - ".github/workflows/build-at-printer-agent.yml"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "ATPrinterAgent_v0.2.0/**"
+      - ".github/workflows/build-at-printer-agent.yml"
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Restore
+        run: dotnet restore "ATPrinterAgent_v0.2.0/src/ATPrinterAgent.csproj"
+
+      - name: Publish EXE
+        run: >
+          dotnet publish "ATPrinterAgent_v0.2.0/src/ATPrinterAgent.csproj"
+          -c Release
+          -r win-x64
+          --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:PublishTrimmed=false
+          -o "ATPrinterAgent_v0.2.0/publish"
+
+      - name: Verify EXE
+        shell: pwsh
+        run: |
+          $exe = "ATPrinterAgent_v0.2.0/publish/ATPrinterAgent.exe"
+          if (!(Test-Path $exe)) {
+            throw "No se generó ATPrinterAgent.exe"
+          }
+          Get-Item $exe | Format-List FullName,Length,LastWriteTime
+
+      - name: Package
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "ATPrinterAgent_v0.2.0/publish/*" -DestinationPath "ATPrinterAgent-v0.2.0-win-x64.zip" -Force
+
+      - name: Upload EXE artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ATPrinterAgent-v0.2.0-win-x64
+          path: |
+            ATPrinterAgent_v0.2.0/publish/ATPrinterAgent.exe
+            ATPrinterAgent-v0.2.0-win-x64.zip
+          if-no-files-found: error
