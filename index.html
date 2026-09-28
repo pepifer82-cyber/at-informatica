@@ -386,10 +386,90 @@ function fPr(){var s=(document.getElementById('pr-s')?document.getElementById('p
 function cNorm(v){return String(v||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').toLowerCase().trim()}
 function cMatches(term){var q=cNorm(term);if(!q)return[];return D.clients.filter(function(c){var n=cNorm(c.name),r=cNorm(c.ruc),t=cNorm(c.tel),e=cNorm(c.email);return n.indexOf(q)>=0||r.indexOf(q)>=0||t.indexOf(q)>=0||e.indexOf(q)>=0}).sort(function(a,b){var an=cNorm(a.name),ar=cNorm(a.ruc),bn=cNorm(b.name),br=cNorm(b.ruc);var as=(an===q||ar===q)?0:an.indexOf(q)===0||ar.indexOf(q)===0?1:2;var bs=(bn===q||br===q)?0:bn.indexOf(q)===0||br.indexOf(q)===0?1:2;return as-bs||an.localeCompare(bn)})}
 function clientFields(pref){var m={pp:['pp-cl','pp-cr','pp-ct','pp-cd'],ff:['ff-cl','ff-cr','ff-ct','ff-cd'],sv:['sv-c','sv-r','sv-t','sv-d'],rm:['rm-c','rm-r','rm-t','rm-d'],ot:['ot-c','ot-r','ot-t','ot-d'],al:['al-c','al-r','al-t','al-d']};return m[pref]||[]}
-function clientPicker(pref,name,ruc,id){
-  var q=(name||ruc||'');
-  return `<div class="md:col-span-2 relative"><label class="text-xs text-at-mut font-semibold mb-1 block"><i class="fas fa-user-check mr-1 text-at-accent"></i>Buscar cliente por nombre o RUC</label><div class="flex gap-2"><input id="${pref}-find" class="inp" value="${esc(q)}" placeholder="Escriba nombre o RUC..." autocomplete="off" oninput="clientLookup('${pref}',this.value)" onkeydown="if(event.key==='Enter'){event.preventDefault();clientEnter('${pref}',this.value)}"><button type="button" class="bs whitespace-nowrap" onclick="clientLookup('${pref}',document.getElementById('${pref}-find').value)"><i class="fas fa-search mr-1"></i>Buscar</button></div><input type="hidden" id="${pref}-clid" value="${id||0}"><div id="${pref}-matches" class="absolute left-0 right-0 top-[72px] z-40 bg-at-card border border-at-bdr rounded-xl shadow-2xl overflow-hidden" style="display:none"></div><p class="text-[11px] text-at-mut mt-1">Al seleccionar un cliente se cargan automáticamente nombre, RUC/CI, teléfono y dirección.</p></div>`;
+async function rucWebSearch(query){
+  var q=String(query||'').trim();
+  if(!q){toast('Ingrese un nombre o RUC para buscar.','error');return[]}
+  try{
+    var res=await fetch(SUPABASE_URL+'/functions/v1/dnit-ruc-lookup',{method:'POST',headers:{'Content-Type':'application/json','apikey':SUPABASE_KEY},body:JSON.stringify({q:q})});
+    var out=await res.json();
+    if(!res.ok||!out||!out.ok)throw new Error((out&&out.error)||'No se pudo consultar la fuente web.');
+    return Array.isArray(out.results)?out.results:[];
+  }catch(e){console.error('RUC WEB:',e);toast(e.message||'No se pudo consultar la fuente web.','error');return[]}
 }
+function webRucValue(x){
+  if(!x)return'';
+  if(x.fullRuc)return String(x.fullRuc).trim();
+  var r=String(x.ruc||'').trim(),d=String(x.dv||'').trim();
+  return r+(d?'-'+d:'');
+}
+function webNameValue(x){return String((x&&x.name)||'').trim()}
+function fillWebClient(pref,x){
+  if(!x)return;
+  var f=clientFields(pref),nm=webNameValue(x),rr=webRucValue(x);
+  var a=document.getElementById(f[0]),r=document.getElementById(f[1]);
+  if(a)a.value=nm;
+  if(r)r.value=rr;
+  var find=document.getElementById(pref+'-find');
+  if(find)find.value=nm+(rr?' · '+rr:'');
+  var hid=document.getElementById(pref+'-clid');
+  if(hid)hid.value=0;
+  var box=document.getElementById(pref+'-matches');
+  if(box)box.style.display='none';
+  toast('Datos encontrados: '+(nm||rr||'RUC'),'success');
+}
+function showWebClientChoices(pref,list){
+  var box=document.getElementById(pref+'-matches');
+  if(!box)return;
+  box.innerHTML=list.slice(0,8).map(function(x,i){
+    var nm=webNameValue(x),rr=webRucValue(x),st=String(x.state||'');
+    return '<button type="button" class="w-full text-left px-4 py-3 hover:bg-at-bg border-b border-at-bdr/50 last:border-b-0" data-web-index="'+i+'"><div class="font-semibold text-sm">'+esc(nm||'Sin nombre')+'</div><div class="text-xs text-at-mut mt-0.5">RUC: '+esc(rr||'-')+(st?' · Estado: '+esc(st):'')+' · Fuente: RUC SUNCOM</div></button>';
+  }).join('');
+  Array.prototype.forEach.call(box.querySelectorAll('[data-web-index]'),function(btn){btn.onclick=function(){fillWebClient(pref,list[parseInt(btn.getAttribute('data-web-index'),10)||0])}});
+  box.style.display='block';
+}
+async function consultWebFor(pref){
+  var f=clientFields(pref),q=((document.getElementById(pref+'-find')||{}).value||'').trim(),r=((document.getElementById(f[1])||{}).value||'').trim(),raw=(q||r);
+  if(raw.indexOf('·')>=0)raw=raw.split('·')[0].trim();
+  if(!raw){toast('Ingrese un nombre o RUC para buscar en la web.','error');return}
+  var btn=document.getElementById(pref+'-web');
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="fas fa-spinner fa-spin"></i>'}
+  try{
+    var list=await rucWebSearch(raw);
+    if(!list.length)return;
+    if(list.length===1){fillWebClient(pref,list[0]);return}
+    showWebClientChoices(pref,list);
+    toast('Se encontraron '+list.length+' coincidencias. Seleccione la correcta.','success');
+  }finally{if(btn){btn.disabled=false;btn.innerHTML='<i class="fas fa-globe"></i> WEB'}}
+}
+async function consultWebModal(){
+  var r=((document.getElementById('cl-r')||{}).value||'').trim(),n=((document.getElementById('cl-n')||{}).value||'').trim(),raw=r||n;
+  if(!raw){toast('Ingrese RUC o nombre del cliente.','error');return}
+  var btn=document.getElementById('cl-web');
+  if(btn){btn.disabled=true;btn.innerHTML='<i class="fas fa-spinner fa-spin"></i>'}
+  try{
+    var list=await rucWebSearch(raw);
+    if(!list.length)return;
+    window._webRucModal=list;
+    if(list.length===1){chooseWebModal(0);return}
+    var box=document.getElementById('cl-web-results');
+    if(box){
+      box.innerHTML=list.slice(0,8).map(function(x,i){var nm=webNameValue(x),rr=webRucValue(x),st=String(x.state||'');return '<button type="button" class="w-full text-left px-3 py-2 rounded-lg border border-at-bdr hover:border-at-accent/50 mb-1" data-web-modal="'+i+'"><div class="text-sm font-semibold">'+esc(nm||'Sin nombre')+'</div><div class="text-xs text-at-mut">RUC: '+esc(rr||'-')+(st?' · '+esc(st):'')+'</div></button>'}).join('');
+      Array.prototype.forEach.call(box.querySelectorAll('[data-web-modal]'),function(btn2){btn2.onclick=function(){chooseWebModal(parseInt(btn2.getAttribute('data-web-modal'),10)||0)}});
+      box.style.display='block';
+    }
+    toast('Se encontraron '+list.length+' coincidencias. Seleccione la correcta.','success');
+  }finally{if(btn){btn.disabled=false;btn.innerHTML='<i class="fas fa-globe"></i> WEB'}}
+}
+function chooseWebModal(i){
+  var x=(window._webRucModal||[])[i];
+  if(!x)return;
+  document.getElementById('cl-n').value=webNameValue(x);
+  document.getElementById('cl-r').value=webRucValue(x);
+  var box=document.getElementById('cl-web-results');
+  if(box)box.style.display='none';
+  toast('Datos encontrados: '+(webNameValue(x)||webRucValue(x)),'success');
+}
+function clientPicker(pref,name,ruc,id){var q=(name||ruc||'');return'<div class="md:col-span-2 relative"><label class="text-xs text-at-mut font-semibold mb-1 block"><i class="fas fa-user-check mr-1 text-at-accent"></i>Buscar cliente por nombre o RUC</label><div class="flex gap-2"><input id="'+pref+'-find" class="inp" value="'+esc(q)+'" placeholder="Escriba nombre o RUC..." autocomplete="off" oninput="clientLookup(\''+pref+'\',this.value)" onkeydown="if(event.key===\'Enter\'){event.preventDefault();clientEnter(\''+pref+'\',this.value)}"><button type="button" class="bs whitespace-nowrap" onclick="clientLookup(\''+pref+'\',document.getElementById(\''+pref+'-find\').value)"><i class="fas fa-search mr-1"></i>Buscar</button><button type="button" id="'+pref+'-web" class="bs whitespace-nowrap" title="Buscar RUC en la web" onclick="consultWebFor(\''+pref+'\')"><i class="fas fa-globe"></i> WEB</button></div><input type="hidden" id="'+pref+'-clid" value="'+(id||0)+'"><div id="'+pref+'-matches" class="absolute left-0 right-0 top-[72px] z-40 bg-at-card border border-at-bdr rounded-xl shadow-2xl overflow-hidden" style="display:none"></div><p class="text-[11px] text-at-mut mt-1">Puede buscar en tus clientes o en RUC SUNCOM por nombre o RUC. Fuente independiente basada en datos públicos de DNIT.</p></div>'}
 function clientLookup(pref,term){
   var box=document.getElementById(pref+'-matches');
   if(!box)return;
@@ -544,7 +624,7 @@ function delUsr(id){var users=getUsers()||[];var u=null;for(var i=0;i<users.leng
 function esc(v){return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;')}
 function rClients(){var el=document.getElementById('R-clients');el.innerHTML='<div class="flex flex-wrap items-center gap-3 mb-5"><div class="flex-1 min-w-[220px] relative"><i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-at-mut text-sm"></i><input id="cl-s" class="inp pl-9" placeholder="Buscar cliente..." oninput="fClients()"></div><button class="bp" onclick="oClient()"><i class="fas fa-plus mr-2"></i>Nuevo cliente</button></div><div class="bg-at-card border border-at-bdr rounded-xl overflow-hidden"><div class="overflow-x-auto"><table><thead><tr><th>Cliente</th><th>RUC/CI</th><th>Telefono</th><th>Email</th><th>Direccion</th><th class="text-center">Acc.</th></tr></thead><tbody id="cl-tb"></tbody></table></div></div>';fClients()}
 function fClients(){var s=((document.getElementById('cl-s')||{}).value||'').toLowerCase();var a=D.clients.filter(function(x){return !s||[x.name,x.ruc,x.tel,x.email,x.dir].join(' ').toLowerCase().indexOf(s)>=0}).sort(function(a,b){return a.name.localeCompare(b.name)});var tb=document.getElementById('cl-tb');if(!tb)return;tb.innerHTML=a.map(function(x){return'<tr><td><span class="font-semibold">'+esc(x.name)+'</span></td><td>'+esc(x.ruc)+'</td><td>'+esc(x.tel)+'</td><td>'+esc(x.email)+'</td><td>'+esc(x.dir)+'</td><td class="text-center whitespace-nowrap"><button class="text-at-cyan p-1" onclick="oClient('+x.id+')"><i class="fas fa-pen"></i></button><button class="text-at-err p-1" onclick="dClient('+x.id+')"><i class="fas fa-trash"></i></button></td></tr>'}).join('')||'<tr><td colspan="6" class="text-center text-at-mut py-8">No hay clientes registrados</td></tr>'}
-function oClient(id){var x=id?D.clients.find(function(a){return a.id===id}):null;mdl('<div class="p-6 mdl-pad"><div class="flex items-center justify-between mb-5"><h3 class="fd text-lg font-bold text-at-accent">'+(x?'EDITAR':'NUEVO')+' CLIENTE</h3><button onclick="cmdl()" class="text-at-mut"><i class="fas fa-times"></i></button></div><div class="grid grid-cols-1 md:grid-cols-2 gap-4"><div class="md:col-span-2"><label class="text-xs text-at-mut font-semibold mb-1 block">Nombre / Razon social</label><input id="cl-n" class="inp" value="'+esc(x&&x.name||'')+'" placeholder="Nombre del cliente"></div><div><label class="text-xs text-at-mut font-semibold mb-1 block">RUC / CI</label><input id="cl-r" class="inp" value="'+esc(x&&x.ruc||'')+'" placeholder="RUC o cedula"></div><div><label class="text-xs text-at-mut font-semibold mb-1 block">Telefono</label><input id="cl-t" class="inp" value="'+esc(x&&x.tel||'')+'" placeholder="Telefono"></div><div><label class="text-xs text-at-mut font-semibold mb-1 block">Email</label><input id="cl-e" class="inp" value="'+esc(x&&x.email||'')+'" placeholder="correo@dominio.com"></div><div><label class="text-xs text-at-mut font-semibold mb-1 block">Ciudad</label><input id="cl-ci" class="inp" value="'+esc(x&&x.city||'')+'" placeholder="Asuncion"></div><div class="md:col-span-2"><label class="text-xs text-at-mut font-semibold mb-1 block">Direccion</label><input id="cl-d" class="inp" value="'+esc(x&&x.dir||'')+'" placeholder="Direccion"></div><div class="md:col-span-2"><label class="text-xs text-at-mut font-semibold mb-1 block">Observaciones</label><textarea id="cl-o" class="inp" rows="2">'+esc(x&&x.obs||'')+'</textarea></div></div><div class="flex justify-end gap-3 mt-5"><button class="bs" onclick="cmdl()">Cancelar</button><button class="bp" onclick="svClient('+(id||0)+')"><i class="fas fa-save mr-2"></i>Guardar</button></div></div>')}
+function oClient(id){var x=id?D.clients.find(function(a){return a.id===id}):null;mdl('<div class="p-6 mdl-pad"><div class="flex items-center justify-between mb-5"><h3 class="fd text-lg font-bold text-at-accent">'+(x?'EDITAR':'NUEVO')+' CLIENTE</h3><button onclick="cmdl()" class="text-at-mut"><i class="fas fa-times"></i></button></div><div class="grid grid-cols-1 md:grid-cols-2 gap-4"><div class="md:col-span-2"><label class="text-xs text-at-mut font-semibold mb-1 block">Nombre / Razon social</label><input id="cl-n" class="inp" value="'+esc(x&&x.name||'')+'" placeholder="Nombre del cliente"></div><div><label class="text-xs text-at-mut font-semibold mb-1 block">RUC / CI</label><input id="cl-r" class="inp" value="'+esc(x&&x.ruc||'')+'" placeholder="RUC o cedula"><button type="button" id="cl-web" class="bs whitespace-nowrap" title="Buscar RUC en la web" onclick="consultWebModal()"><i class="fas fa-globe"></i> WEB</button></div><div><label class="text-xs text-at-mut font-semibold mb-1 block">Telefono</label><input id="cl-t" class="inp" value="'+esc(x&&x.tel||'')+'" placeholder="Telefono"><div id="cl-web-results" class="mt-2" style="display:none"></div></div><div><label class="text-xs text-at-mut font-semibold mb-1 block">Email</label><input id="cl-e" class="inp" value="'+esc(x&&x.email||'')+'" placeholder="correo@dominio.com"></div><div><label class="text-xs text-at-mut font-semibold mb-1 block">Ciudad</label><input id="cl-ci" class="inp" value="'+esc(x&&x.city||'')+'" placeholder="Asuncion"></div><div class="md:col-span-2"><label class="text-xs text-at-mut font-semibold mb-1 block">Direccion</label><input id="cl-d" class="inp" value="'+esc(x&&x.dir||'')+'" placeholder="Direccion"></div><div class="md:col-span-2"><label class="text-xs text-at-mut font-semibold mb-1 block">Observaciones</label><textarea id="cl-o" class="inp" rows="2">'+esc(x&&x.obs||'')+'</textarea></div></div><div class="flex justify-end gap-3 mt-5"><button class="bs" onclick="cmdl()">Cancelar</button><button class="bp" onclick="svClient('+(id||0)+')"><i class="fas fa-save mr-2"></i>Guardar</button></div></div>')}
 function svClient(id){var g=function(i){return(document.getElementById(i)||{}).value||''},name=g('cl-n').trim();if(!name){toast('Ingrese el nombre del cliente','error');return}var d={id:id||gid(),name:name,ruc:g('cl-r').trim(),tel:g('cl-t').trim(),email:g('cl-e').trim(),city:g('cl-ci').trim(),dir:g('cl-d').trim(),obs:g('cl-o').trim()};if(id){var i=D.clients.findIndex(function(x){return x.id===id});if(i>=0)D.clients[i]=d}else D.clients.push(d);saveD();cmdl();rClients();toast(id?'Cliente actualizado':'Cliente agregado')}
 function dClient(id){cfm('Eliminar cliente?',function(){D.clients=D.clients.filter(function(x){return x.id!==id});saveD();rClients();toast('Cliente eliminado','info')})}
 function rSuppliers(){var el=document.getElementById('R-suppliers');el.innerHTML='<div class="flex flex-wrap items-center gap-3 mb-5"><div class="flex-1 min-w-[220px] relative"><i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-at-mut text-sm"></i><input id="sp-s" class="inp pl-9" placeholder="Buscar proveedor..." oninput="fSuppliers()"></div><button class="bp" onclick="oSupplier()"><i class="fas fa-plus mr-2"></i>Nuevo proveedor</button></div><div class="bg-at-card border border-at-bdr rounded-xl overflow-hidden"><div class="overflow-x-auto"><table><thead><tr><th>Proveedor</th><th>RUC</th><th>Contacto</th><th>Telefono</th><th>Condicion</th><th class="text-center">Acc.</th></tr></thead><tbody id="sp-tb"></tbody></table></div></div>';fSuppliers()}
