@@ -1,0 +1,56 @@
+name: Build AT Printer Agent Now
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/build-at-printer-agent-now.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout agent branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent-v0.2-build
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Restore
+        run: dotnet restore "ATPrinterAgent_v0.2.0/src/ATPrinterAgent.csproj"
+
+      - name: Publish
+        run: >
+          dotnet publish "ATPrinterAgent_v0.2.0/src/ATPrinterAgent.csproj"
+          -c Release -r win-x64 --self-contained true
+          -p:PublishSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:PublishTrimmed=false
+          -o "ATPrinterAgent_v0.2.0/publish"
+
+      - name: Check EXE
+        shell: pwsh
+        run: |
+          if (!(Test-Path "ATPrinterAgent_v0.2.0/publish/ATPrinterAgent.exe")) {
+            throw "ATPrinterAgent.exe no fue generado"
+          }
+          Get-Item "ATPrinterAgent_v0.2.0/publish/ATPrinterAgent.exe" | Format-List FullName,Length
+
+      - name: Zip
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "ATPrinterAgent_v0.2.0/publish/*" -DestinationPath "ATPrinterAgent-v0.2.0-win-x64.zip" -Force
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: ATPrinterAgent-v0.2.0-win-x64
+          path: |
+            ATPrinterAgent_v0.2.0/publish/ATPrinterAgent.exe
+            ATPrinterAgent-v0.2.0-win-x64.zip
+          if-no-files-found: error
